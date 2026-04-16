@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     cosine_threshold: float = 0.5
 
     # 内部鉴权（Node.js Bot 调用时传 header）
-    internal_secret: str = "hello"
+    internal_secret: str = ""
 
     class Config:
         env_file = ".env"
