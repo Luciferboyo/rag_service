@@ -1,4 +1,5 @@
 import uuid
+import logging
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from typing import Optional
 from models.schemas import CreateKbRequest, KbResponse, UploadResponse, RagModelConfig, KbDetail, DocItem
@@ -6,6 +7,8 @@ from services import parser, chunker, rag_manager
 from services import meta_store
 from api.deps import verify_token
 import json
+
+logger = logging.getLogger("rag.kb")
 
 router = APIRouter(tags=["知识库"])
 
@@ -15,6 +18,7 @@ async def create_kb(req: CreateKbRequest):
     kb_id = f"kb_{uuid.uuid4().hex[:12]}"
     await rag_manager.get_or_create(req.tenantId, kb_id, req.modelConfig)
     await meta_store.create_kb(req.tenantId, kb_id, req.name, req.description)
+    logger.info("KB created | tenant=%s kb=%s name=%s", req.tenantId, kb_id, req.name)
     return KbResponse(
         kbId=kb_id,
         tenantId=req.tenantId,
@@ -78,12 +82,15 @@ async def upload_document(
             raise HTTPException(400, "modelConfig 格式错误")
 
     doc_id = f"doc_{uuid.uuid4().hex[:12]}"
+    logger.info("Indexing start | tenant=%s kb=%s file=%s chunks=%d", tenantId, kb_id, file.filename, len(chunks))
     try:
         count = await rag_manager.insert_chunks(tenantId, kb_id, chunks, cfg)
     except Exception as e:
+        logger.error("Indexing failed | tenant=%s kb=%s file=%s error=%s", tenantId, kb_id, file.filename, str(e))
         raise HTTPException(500, f"索引失败: {str(e)}")
 
     await meta_store.add_doc(tenantId, kb_id, doc_id, file.filename, count)
+    logger.info("Indexing done | tenant=%s kb=%s file=%s doc=%s chunks=%d", tenantId, kb_id, file.filename, doc_id, count)
 
     return UploadResponse(
         docId=doc_id,
@@ -97,4 +104,5 @@ async def upload_document(
 async def delete_kb(kb_id: str, tenantId: str):
     await rag_manager.delete_kb(tenantId, kb_id)
     await meta_store.delete_kb(tenantId, kb_id)
+    logger.info("KB deleted | tenant=%s kb=%s", tenantId, kb_id)
     return {"ok": True}

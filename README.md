@@ -152,6 +152,44 @@ curl -X POST http://localhost:8000/api/query \
 
 ---
 
+### `GET /api/kb/list`
+
+列出某租户下所有知识库。
+
+**请求参数**：`tenantId`（query string）
+
+**响应示例**：
+```json
+[
+  {
+    "kbId": "kb_a1b2c3d4",
+    "name": "香港劳动法",
+    "description": "雇佣条例等法律文件",
+    "createdAt": "2026-04-16T10:00:00Z",
+    "docs": [
+      { "docId": "doc_xxx", "fileName": "雇佣条例.pdf", "chunkCount": 320, "uploadedAt": "2026-04-16T10:05:00Z" }
+    ]
+  }
+]
+```
+
+---
+
+### `GET /api/kb/{kbId}/docs`
+
+列出某知识库下所有已上传文档。
+
+**请求参数**：`tenantId`（query string）
+
+**响应示例**：
+```json
+[
+  { "docId": "doc_xxx", "fileName": "雇佣条例.pdf", "chunkCount": 320, "uploadedAt": "2026-04-16T10:05:00Z" }
+]
+```
+
+---
+
 ### `POST /api/kb/create`
 
 创建知识库。
