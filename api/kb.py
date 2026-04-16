@@ -1,14 +1,15 @@
 import uuid
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from typing import Optional
 from models.schemas import CreateKbRequest, KbResponse, UploadResponse, RagModelConfig
 from services import parser, chunker, rag_manager
+from api.deps import verify_token
 import json
 
 router = APIRouter(tags=["知识库"])
 
 
-@router.post("/create", response_model=KbResponse)
+@router.post("/create", response_model=KbResponse, dependencies=[Depends(verify_token)])
 async def create_kb(req: CreateKbRequest):
     kb_id = f"kb_{uuid.uuid4().hex[:12]}"
     # 预初始化实例（验证模型配置是否可用）
@@ -21,7 +22,7 @@ async def create_kb(req: CreateKbRequest):
     )
 
 
-@router.post("/{kb_id}/upload", response_model=UploadResponse)
+@router.post("/{kb_id}/upload", response_model=UploadResponse,dependencies=[Depends(verify_token)])
 async def upload_document(
     kb_id: str,
     tenantId: str = Form(...),
@@ -73,7 +74,7 @@ async def upload_document(
     )
 
 
-@router.delete("/{kb_id}")
+@router.delete("/{kb_id}",dependencies=[Depends(verify_token)])
 async def delete_kb(kb_id: str, tenantId: str):
     await rag_manager.delete_kb(tenantId, kb_id)
     return {"ok": True}

@@ -1,13 +1,14 @@
 import time
 import uuid
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from models.schemas import QueryRequest, QueryResponse
 from services import rag_manager
+from api.deps import verify_token
 
 router = APIRouter(tags=["查询"])
 
 
-@router.post("/query", response_model=QueryResponse)
+@router.post("/query", response_model=QueryResponse, dependencies=[Depends(verify_token)])
 async def query(req: QueryRequest):
     if not req.tenantId:
         raise HTTPException(400, "tenantId 不能为空")
