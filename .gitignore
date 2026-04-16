@@ -1,0 +1,12 @@
+# 忽略单个文件
+.env
+pycharm.key
+
+# 忽略整个文件夹
+venv/
+__pycache__/
+.idea/
+
+# 忽略某类型的文件
+*.log
+*.pyc
