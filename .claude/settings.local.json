@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find \"D:\\\\soft\\\\project\\\\company\\\\ifey\\\\ai\\\\python_rag_service\" -maxdepth 2 -type f -name \"*.py\" ! -path \"*/.venv/*\" ! -path \"*/venv/*\" -exec grep -n \"TODO\\\\|FIXME\\\\|XXX\\\\|HACK\\\\|BUG\\\\|raise Exception\\\\|pass$\" {} +)",
+      "Bash(python -m py_compile main.py api/health.py api/kb.py api/query.py core/config.py services/rag_manager.py services/model_factory.py services/parser.py services/chunker.py models/schemas.py)",
+      "Bash(xargs ls:*)",
+      "Bash(wc -l /d/soft/project/company/ifey/ai/python_rag_service/services/*.py)",
+      "Bash(python3 -c ':*)",
+      "Bash(python3)",
+      "Bash(python -c ':*)",
+      "Bash(ls -la \"D:\\\\soft\\\\project\\\\company\\\\ifey\\\\ai\\\\python_rag_service\\\\data\\\\\" 2>/dev/null && find \"D:\\\\soft\\\\project\\\\company\\\\ifey\\\\ai\\\\python_rag_service\\\\data\" -type f -name \"*.json\" 2>/dev/null | head -20)"
+    ]
+  }
+}
