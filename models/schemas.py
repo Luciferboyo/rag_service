@@ -69,3 +69,18 @@ class QueryResponse(BaseModel):
     tokenUsage: dict = {}
     cached: bool = False
     latencyMs: int = 0
+
+# ── KB 列表 / 文档列表 ────────────────────────────────────────
+
+class DocItem(BaseModel):
+    docId: str
+    fileName: str
+    chunkCount: int
+    uploadedAt: str
+
+class KbDetail(BaseModel):
+    kbId: str
+    name: str
+    description: Optional[str] = None
+    createdAt: str
+    docs: List[DocItem] = []
