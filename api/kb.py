@@ -1,7 +1,7 @@
 import uuid
 import logging
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
-from typing import Optional
+from typing import Optional, List
 from models.schemas import CreateKbRequest, KbResponse, UploadResponse, RagModelConfig, KbDetail, DocItem
 from services import parser, chunker, rag_manager
 from services import meta_store
@@ -48,32 +48,13 @@ async def list_docs(kb_id: str, tenantId: str):
     return [DocItem(**d) for d in docs]
 
 
-@router.post("/{kb_id}/upload", response_model=UploadResponse, dependencies=[Depends(verify_token)])
+@router.post("/{kb_id}/upload", response_model=List[UploadResponse], dependencies=[Depends(verify_token)])
 async def upload_document(
     kb_id: str,
     tenantId: str = Form(...),
-    file: UploadFile = File(...),
+    files: List[UploadFile] = File(...),
     modelConfig: Optional[str] = Form(None),
 ):
-    if not file.filename:
-        raise HTTPException(400, "文件名不能为空")
-
-    file_bytes = await file.read()
-    if len(file_bytes) > 50 * 1024 * 1024:
-        raise HTTPException(400, "文件不能超过 50MB")
-
-    try:
-        text = parser.parse(file.filename, file_bytes)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-
-    if len(text.strip()) < 20:
-        raise HTTPException(400, "文档内容为空或解析失败")
-
-    chunks = chunker.chunk_document(file.filename, text)
-    if not chunks:
-        raise HTTPException(400, "文档分块失败，内容太少")
-
     cfg = None
     if modelConfig:
         try:
@@ -81,23 +62,46 @@ async def upload_document(
         except Exception:
             raise HTTPException(400, "modelConfig 格式错误")
 
-    doc_id = f"doc_{uuid.uuid4().hex[:12]}"
-    logger.info("Indexing start | tenant=%s kb=%s file=%s chunks=%d", tenantId, kb_id, file.filename, len(chunks))
-    try:
-        count = await rag_manager.insert_chunks(tenantId, kb_id, chunks, cfg)
-    except Exception as e:
-        logger.error("Indexing failed | tenant=%s kb=%s file=%s error=%s", tenantId, kb_id, file.filename, str(e))
-        raise HTTPException(500, f"索引失败: {str(e)}")
+    results = []
+    for file in files:
+        if not file.filename:
+            raise HTTPException(400, "文件名不能为空")
 
-    await meta_store.add_doc(tenantId, kb_id, doc_id, file.filename, count)
-    logger.info("Indexing done | tenant=%s kb=%s file=%s doc=%s chunks=%d", tenantId, kb_id, file.filename, doc_id, count)
+        file_bytes = await file.read()
+        if len(file_bytes) > 50 * 1024 * 1024:
+            raise HTTPException(400, f"文件 {file.filename} 不能超过 50MB")
 
-    return UploadResponse(
-        docId=doc_id,
-        fileName=file.filename,
-        chunkCount=count,
-        status="indexed",
-    )
+        try:
+            text = parser.parse(file.filename, file_bytes)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+        if len(text.strip()) < 20:
+            raise HTTPException(400, f"文档 {file.filename} 内容为空或解析失败")
+
+        chunks = chunker.chunk_document(file.filename, text)
+        if not chunks:
+            raise HTTPException(400, f"文档 {file.filename} 分块失败，内容太少")
+
+        doc_id = f"doc_{uuid.uuid4().hex[:12]}"
+        logger.info("Indexing start | tenant=%s kb=%s file=%s chunks=%d", tenantId, kb_id, file.filename, len(chunks))
+        try:
+            count = await rag_manager.insert_chunks(tenantId, kb_id, chunks, cfg)
+        except Exception as e:
+            logger.error("Indexing failed | tenant=%s kb=%s file=%s error=%s", tenantId, kb_id, file.filename, str(e))
+            raise HTTPException(500, f"索引失败: {str(e)}")
+
+        await meta_store.add_doc(tenantId, kb_id, doc_id, file.filename, count)
+        logger.info("Indexing done | tenant=%s kb=%s file=%s doc=%s chunks=%d", tenantId, kb_id, file.filename, doc_id, count)
+
+        results.append(UploadResponse(
+            docId=doc_id,
+            fileName=file.filename,
+            chunkCount=count,
+            status="indexed",
+        ))
+
+    return results
 
 
 @router.delete("/{kb_id}", dependencies=[Depends(verify_token)])
