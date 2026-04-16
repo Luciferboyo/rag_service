@@ -6,6 +6,8 @@ pycharm.key
 venv/
 __pycache__/
 .idea/
+data/tenant_001
+data/test_tenant
 
 # 忽略某类型的文件
 *.log
