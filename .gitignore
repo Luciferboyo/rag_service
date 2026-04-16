@@ -6,6 +6,7 @@ pycharm.key
 venv/
 __pycache__/
 .idea/
+.claude
 data/tenant_001
 data/test_tenant
 
