@@ -1,5 +1,7 @@
 # 忽略单个文件
 .env
+.env.local
+.env.*.local
 pycharm.key
 
 # 忽略整个文件夹
