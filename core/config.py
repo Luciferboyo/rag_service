@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # 服务配置
     storage_dir: str = "./data"
-    
+
     # 默认 LLM（用户未配置时的 fallback）
     default_index_base_url: str = "https://openrouter.ai/api/v1"
     default_index_api_key: str = ""
