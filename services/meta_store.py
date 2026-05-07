@@ -81,6 +81,10 @@ async def delete_kb(tenant_id: str, kb_id: str):
         _save(tenant_id, data)
 
 
+def kb_exists(tenant_id: str, kb_id: str) -> bool:
+    return kb_id in _load(tenant_id)
+
+
 def list_kbs(tenant_id: str) -> list[dict]:
     data = _load(tenant_id)
     return list(data.values())

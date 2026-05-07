@@ -3,7 +3,7 @@ import uuid
 import logging
 from fastapi import APIRouter, HTTPException, Depends
 from models.schemas import QueryRequest, QueryResponse
-from services import rag_manager
+from services import rag_manager, meta_store
 from api.deps import verify_token
 
 router = APIRouter(tags=["查询"])
@@ -19,6 +19,10 @@ async def query(req: QueryRequest):
 
     trace_id = req.traceId or str(uuid.uuid4())
     kb_id = req.kbId or "default"
+
+    if not meta_store.kb_exists(req.tenantId, kb_id):
+        raise HTTPException(404, f"知识库 {kb_id} 不存在")
+
     start = time.time()
 
     logger.info("Query start | trace=%s tenant=%s kb=%s mode=%s q=%s",

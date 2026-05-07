@@ -44,6 +44,8 @@ async def list_kbs(tenantId: str):
 
 @router.get("/{kb_id}/docs", response_model=list[DocItem], dependencies=[Depends(verify_token)])
 async def list_docs(kb_id: str, tenantId: str):
+    if not meta_store.kb_exists(tenantId, kb_id):
+        raise HTTPException(404, f"知识库 {kb_id} 不存在")
     docs = meta_store.list_docs(tenantId, kb_id)
     return [DocItem(**d) for d in docs]
 
@@ -55,6 +57,9 @@ async def upload_document(
     files: List[UploadFile] = File(...),
     modelConfig: Optional[str] = Form(None),
 ):
+    if not meta_store.kb_exists(tenantId, kb_id):
+        raise HTTPException(404, f"知识库 {kb_id} 不存在")
+
     cfg = None
     if modelConfig:
         try:
@@ -106,6 +111,8 @@ async def upload_document(
 
 @router.delete("/{kb_id}", dependencies=[Depends(verify_token)])
 async def delete_kb(kb_id: str, tenantId: str):
+    if not meta_store.kb_exists(tenantId, kb_id):
+        raise HTTPException(404, f"知识库 {kb_id} 不存在")
     await rag_manager.delete_kb(tenantId, kb_id)
     await meta_store.delete_kb(tenantId, kb_id)
     logger.info("KB deleted | tenant=%s kb=%s", tenantId, kb_id)
