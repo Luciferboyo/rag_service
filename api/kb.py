@@ -17,7 +17,8 @@ router = APIRouter(tags=["知识库"])
 async def create_kb(req: CreateKbRequest):
     kb_id = f"kb_{uuid.uuid4().hex[:12]}"
     await rag_manager.get_or_create(req.tenantId, kb_id, req.modelConfig)
-    await meta_store.create_kb(req.tenantId, kb_id, req.name, req.description)
+    model_config_dict = req.modelConfig.model_dump(mode="json") if req.modelConfig else None
+    await meta_store.create_kb(req.tenantId, kb_id, req.name, req.description, model_config_dict)
     logger.info("KB created | tenant=%s kb=%s name=%s", req.tenantId, kb_id, req.name)
     return KbResponse(
         kbId=kb_id,

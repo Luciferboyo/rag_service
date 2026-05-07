@@ -47,7 +47,13 @@ def _now() -> str:
 
 # ── 公开接口 ──────────────────────────────────────────────────
 
-async def create_kb(tenant_id: str, kb_id: str, name: str, description: str | None):
+async def create_kb(
+    tenant_id: str,
+    kb_id: str,
+    name: str,
+    description: str | None,
+    model_config: dict | None = None,
+):
     async with _lock(tenant_id):
         data = _load(tenant_id)
         data[kb_id] = {
@@ -55,9 +61,15 @@ async def create_kb(tenant_id: str, kb_id: str, name: str, description: str | No
             "name": name,
             "description": description,
             "createdAt": _now(),
+            "modelConfig": model_config,
             "docs": [],
         }
         _save(tenant_id, data)
+
+
+def get_kb_model_config(tenant_id: str, kb_id: str) -> dict | None:
+    data = _load(tenant_id)
+    return data.get(kb_id, {}).get("modelConfig")
 
 
 async def add_doc(

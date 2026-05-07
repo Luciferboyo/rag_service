@@ -8,6 +8,7 @@ from services.model_factory import (
     get_default_index_config, get_default_embedding_config,
 )
 from core.config import settings
+from services import meta_store
 
 # key = "tenantId:kbId"
 _instances: dict[str, LightRAG] = {}
@@ -37,6 +38,12 @@ async def get_or_create(
 
     async with _init_locks[key]:
         if key not in _instances:
+            # 服务重启后从持久化存储恢复模型配置，避免用错默认值
+            if model_cfg is None:
+                stored = meta_store.get_kb_model_config(tenant_id, kb_id)
+                if stored:
+                    model_cfg = RagModelConfig.model_validate(stored)
+
             index_cfg = (model_cfg and model_cfg.index) or get_default_index_config()
             emb_cfg, emb_dim = get_default_embedding_config()
             if model_cfg and model_cfg.embedding:
