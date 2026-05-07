@@ -77,6 +77,8 @@ class DocItem(BaseModel):
     fileName: str
     chunkCount: int
     uploadedAt: str
+    status: str = "indexed"          # "indexing" | "indexed" | "error"
+    error: Optional[str] = None
 
 class KbDetail(BaseModel):
     kbId: str

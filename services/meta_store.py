@@ -79,6 +79,7 @@ async def add_doc(
     file_name: str,
     chunk_count: int,
     rag_doc_ids: list[str],
+    status: str = "indexing",
 ):
     async with _lock(tenant_id):
         data = _load(tenant_id)
@@ -90,7 +91,28 @@ async def add_doc(
             "chunkCount": chunk_count,
             "uploadedAt": _now(),
             "ragDocIds": rag_doc_ids,
+            "status": status,
         })
+        _save(tenant_id, data)
+
+
+async def update_doc_status(
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    status: str,
+    error: str | None = None,
+):
+    async with _lock(tenant_id):
+        data = _load(tenant_id)
+        if kb_id not in data:
+            return
+        for doc in data[kb_id]["docs"]:
+            if doc["docId"] == doc_id:
+                doc["status"] = status
+                if error is not None:
+                    doc["error"] = error
+                break
         _save(tenant_id, data)
 
 
