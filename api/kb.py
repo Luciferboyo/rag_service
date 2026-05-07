@@ -1,6 +1,7 @@
 import uuid
 import hashlib
 import logging
+import asyncio
 from fastapi import APIRouter, BackgroundTasks, UploadFile, File, Form, HTTPException, Depends
 from typing import Optional, List
 from models.schemas import CreateKbRequest, KbResponse, PatchKbRequest, UploadResponse, RagModelConfig, KbDetail, DocItem
@@ -114,14 +115,14 @@ async def upload_document(
             raise HTTPException(409, f"文件 {file.filename} 内容已存在，docId={existing['docId']}")
 
         try:
-            text = parser.parse(file.filename, file_bytes)
+            text = await asyncio.to_thread(parser.parse, file.filename, file_bytes)
         except ValueError as e:
             raise HTTPException(400, str(e))
 
         if len(text.strip()) < 20:
             raise HTTPException(400, f"文档 {file.filename} 内容为空或解析失败")
 
-        chunks = chunker.chunk_document(file.filename, text)
+        chunks = await asyncio.to_thread(chunker.chunk_document, file.filename, text)
         if not chunks:
             raise HTTPException(400, f"文档 {file.filename} 分块失败，内容太少")
 
