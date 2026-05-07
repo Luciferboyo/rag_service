@@ -128,6 +128,17 @@ def test_query_missing_question(client):
     assert r.status_code == 422
 
 
+def test_query_missing_kb_id(client):
+    """kbId 现在是必填字段，不传应返回 422"""
+    tid = make_tenant()
+    r = client.post(
+        "/api/query",
+        json={"tenantId": tid, "question": "test"},
+        headers=HEADERS,
+    )
+    assert r.status_code == 422
+
+
 # ── 请求级别覆盖查询模型 ──────────────────────────────────────
 
 def test_query_with_custom_model(client):

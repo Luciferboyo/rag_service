@@ -54,7 +54,7 @@ class UploadResponse(BaseModel):
 class QueryRequest(BaseModel):
     traceId: Optional[str] = None
     tenantId: str
-    kbId: Optional[str] = None
+    kbId: str
     question: str
     mode: QueryMode = QueryMode.hybrid
     topK: int = Field(default=5, ge=1, le=20)

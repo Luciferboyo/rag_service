@@ -14,8 +14,6 @@ logger = logging.getLogger("rag.query")
 async def query(req: QueryRequest):
     if not req.tenantId:
         raise HTTPException(400, "tenantId 不能为空")
-    if not req.kbId:
-        raise HTTPException(400, "kbId 不能为空")
     if not req.question.strip():
         raise HTTPException(400, "question 不能为空")
 
