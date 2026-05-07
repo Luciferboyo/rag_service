@@ -2,6 +2,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from api import kb, query, health
+from core.config import settings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -9,6 +10,13 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("rag.main")
+
+if settings.internal_secret == "hello":
+    logger.warning("⚠️  INTERNAL_SECRET 使用默认值 'hello'，请在生产环境中设置强密钥！")
+if not settings.default_index_api_key:
+    logger.warning("⚠️  DEFAULT_INDEX_API_KEY 未设置，索引功能将不可用")
+if not settings.default_embedding_api_key:
+    logger.warning("⚠️  DEFAULT_EMBEDDING_API_KEY 未设置，向量检索功能将不可用")
 
 app = FastAPI(title="LightRAG Service", version="1.0.0")
 

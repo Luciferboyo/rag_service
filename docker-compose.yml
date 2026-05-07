@@ -1,0 +1,32 @@
+services:
+  rag-service:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - rag-data:/data/lightrag
+    environment:
+      - STORAGE_DIR=/data/lightrag
+      # LLM / Embedding 配置（从宿主机 .env 注入，或在此处直接填写）
+      - DEFAULT_INDEX_BASE_URL=${DEFAULT_INDEX_BASE_URL:-https://openrouter.ai/api/v1}
+      - DEFAULT_INDEX_API_KEY=${DEFAULT_INDEX_API_KEY}
+      - DEFAULT_INDEX_MODEL=${DEFAULT_INDEX_MODEL:-deepseek/deepseek-chat}
+      - DEFAULT_QUERY_BASE_URL=${DEFAULT_QUERY_BASE_URL:-https://openrouter.ai/api/v1}
+      - DEFAULT_QUERY_API_KEY=${DEFAULT_QUERY_API_KEY}
+      - DEFAULT_QUERY_MODEL=${DEFAULT_QUERY_MODEL:-openai/gpt-4o-mini}
+      - DEFAULT_EMBEDDING_BASE_URL=${DEFAULT_EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      - DEFAULT_EMBEDDING_API_KEY=${DEFAULT_EMBEDDING_API_KEY}
+      - DEFAULT_EMBEDDING_MODEL=${DEFAULT_EMBEDDING_MODEL:-text-embedding-3-small}
+      - DEFAULT_EMBEDDING_DIM=${DEFAULT_EMBEDDING_DIM:-1536}
+      - COSINE_THRESHOLD=${COSINE_THRESHOLD:-0.5}
+      - INTERNAL_SECRET=${INTERNAL_SECRET}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  rag-data:
