@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 from typing import Optional, List, Generic, TypeVar
 from enum import Enum
 
@@ -73,8 +73,6 @@ class QueryResponse(BaseModel):
     answer: str
     sources: List[SourceItem] = []
     entities: List[str] = []
-    tokenUsage: dict = {}
-    cached: bool = False
     latencyMs: int = 0
 
 # ── KB 列表 / 文档列表 ────────────────────────────────────────

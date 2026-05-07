@@ -123,7 +123,7 @@ async def delete_kb(tenant_id: str, kb_id: str):
         await rag.finalize_storages()
     working_dir = Path(settings.storage_dir) / tenant_id / kb_id
     if working_dir.exists():
-        shutil.rmtree(working_dir)
+        await asyncio.to_thread(shutil.rmtree, working_dir)
 
 
 def _guess_dim(model: str) -> int:
