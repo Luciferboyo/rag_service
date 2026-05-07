@@ -22,9 +22,12 @@
 
 - **多租户隔离**：每个 `(tenantId, kbId)` 拥有独立的向量库与知识图谱
 - **文档解析**：支持 PDF、TXT、Markdown，自动语义分块
-- **灵活模型**：索引模型、查询模型、嵌入模型均可独立配置，支持任意 OpenAI 兼容 API
+- **异步索引**：上传后立即返回，后台建图，通过状态接口轮询进度
+- **灵活模型**：索引、查询、嵌入模型均可独立配置（KB 级别或请求级别），支持任意 OpenAI 兼容 API
 - **多种检索模式**：实体检索（low）、语义检索（high）、混合检索（hybrid）
 - **知识图谱 + 向量双引擎**：由 LightRAG 提供，检索质量优于纯向量方案
+- **重复文档防护**：基于文件内容 SHA-256 去重，避免知识图谱冗余
+- **文档级删除**：可单独删除某篇文档，无需重建整个知识库
 
 ---
 
@@ -79,8 +82,8 @@ cp .env.example .env
 
 ```
 DEFAULT_INDEX_API_KEY=sk-...
-DEFAULT_QUERY_API_KEY=sk-...
 DEFAULT_EMBEDDING_API_KEY=sk-...
+INTERNAL_SECRET=your-strong-secret
 ```
 
 ### 3. 启动服务
@@ -98,16 +101,23 @@ curl http://localhost:8000/api/health
 
 # 创建知识库
 curl -X POST http://localhost:8000/api/kb/create \
+  -H "Authorization: Bearer your-secret" \
   -H "Content-Type: application/json" \
   -d '{"tenantId": "demo", "name": "测试知识库"}'
 
-# 上传文档（返回 kbId 用于后续操作）
+# 上传文档（异步，立即返回）
 curl -X POST http://localhost:8000/api/kb/{kbId}/upload \
+  -H "Authorization: Bearer your-secret" \
   -F "tenantId=demo" \
-  -F "file=@your_document.pdf"
+  -F "files=@your_document.pdf"
+
+# 轮询索引状态
+curl "http://localhost:8000/api/kb/{kbId}/docs/{docId}/status?tenantId=demo" \
+  -H "Authorization: Bearer your-secret"
 
 # 提问
 curl -X POST http://localhost:8000/api/query \
+  -H "Authorization: Bearer your-secret" \
   -H "Content-Type: application/json" \
   -d '{
     "tenantId": "demo",
@@ -125,7 +135,7 @@ curl -X POST http://localhost:8000/api/query \
 |------|--------|------|
 | `DEFAULT_INDEX_BASE_URL` | `https://openrouter.ai/api/v1` | 索引/建图 LLM 的 API 地址 |
 | `DEFAULT_INDEX_API_KEY` | — | 索引 LLM 的鉴权 Key |
-| `DEFAULT_INDEX_MODEL` | `openai/gpt-4o-mini` | 索引模型名称 |
+| `DEFAULT_INDEX_MODEL` | `deepseek/deepseek-chat` | 索引模型名称 |
 | `DEFAULT_QUERY_BASE_URL` | `https://openrouter.ai/api/v1` | 问答 LLM 的 API 地址 |
 | `DEFAULT_QUERY_API_KEY` | — | 问答 LLM 的鉴权 Key |
 | `DEFAULT_QUERY_MODEL` | `openai/gpt-4o-mini` | 问答模型名称 |
@@ -135,58 +145,24 @@ curl -X POST http://localhost:8000/api/query \
 | `DEFAULT_EMBEDDING_DIM` | `1536` | 嵌入向量维度 |
 | `COSINE_THRESHOLD` | `0.5` | 向量检索最低相似度阈值（0.0–1.0） |
 | `STORAGE_DIR` | `./data` | 知识库数据存储根目录 |
-| `INTERNAL_SECRET` | — | 内部服务鉴权 Token |
+| `INTERNAL_SECRET` | `hello` | 内部服务鉴权 Token（**生产环境务必修改**） |
 
 ---
 
 ## API 文档
 
+所有接口均需在请求头中携带：
+```
+Authorization: Bearer {INTERNAL_SECRET}
+```
+
+---
+
 ### `GET /api/health`
 
-健康检查。
+健康检查，无需鉴权。
 
-**响应示例**：
-```json
-{ "status": "ok" }
-```
-
----
-
-### `GET /api/kb/list`
-
-列出某租户下所有知识库。
-
-**请求参数**：`tenantId`（query string）
-
-**响应示例**：
-```json
-[
-  {
-    "kbId": "kb_a1b2c3d4",
-    "name": "香港劳动法",
-    "description": "雇佣条例等法律文件",
-    "createdAt": "2026-04-16T10:00:00Z",
-    "docs": [
-      { "docId": "doc_xxx", "fileName": "雇佣条例.pdf", "chunkCount": 320, "uploadedAt": "2026-04-16T10:05:00Z" }
-    ]
-  }
-]
-```
-
----
-
-### `GET /api/kb/{kbId}/docs`
-
-列出某知识库下所有已上传文档。
-
-**请求参数**：`tenantId`（query string）
-
-**响应示例**：
-```json
-[
-  { "docId": "doc_xxx", "fileName": "雇佣条例.pdf", "chunkCount": 320, "uploadedAt": "2026-04-16T10:05:00Z" }
-]
-```
+**响应**：`{ "status": "ok" }`
 
 ---
 
@@ -200,61 +176,153 @@ curl -X POST http://localhost:8000/api/query \
   "tenantId": "your_tenant",
   "name": "知识库名称",
   "description": "可选描述",
-  "modelConfig": {           // 可选，不传则使用环境变量默认值
-    "index": { "baseUrl": "...", "apiKey": "...", "model": "..." },
-    "query": { "baseUrl": "...", "apiKey": "...", "model": "..." },
+  "modelConfig": {
+    "index":     { "baseUrl": "...", "apiKey": "...", "model": "..." },
+    "query":     { "baseUrl": "...", "apiKey": "...", "model": "..." },
     "embedding": { "baseUrl": "...", "apiKey": "...", "model": "..." }
   }
 }
 ```
 
-**响应示例**：
+> `modelConfig` 可选，不传则使用环境变量默认值。配置会持久化，服务重启后自动恢复。
+
+**响应**：
 ```json
-{
-  "kbId": "kb_a1b2c3d4",
-  "tenantId": "your_tenant",
-  "name": "知识库名称"
-}
+{ "kbId": "kb_a1b2c3d4", "tenantId": "your_tenant", "name": "知识库名称" }
 ```
 
 ---
 
-### `POST /api/kb/{kbId}/upload`
+### `GET /api/kb/list`
 
-上传并索引文档（支持 PDF / TXT / Markdown，最大 50MB）。
+列出某租户下所有知识库。
 
-**请求**：`multipart/form-data`
+**Query 参数**：`tenantId`
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `file` | File | 要上传的文档 |
-| `tenantId` | string | 租户 ID |
-| `modelConfig` | JSON string | 可选，覆盖模型配置 |
+**响应**：
+```json
+[
+  {
+    "kbId": "kb_a1b2c3d4",
+    "name": "香港劳动法",
+    "description": "雇佣条例等法律文件",
+    "createdAt": "2026-04-16T10:00:00Z",
+    "docs": [
+      {
+        "docId": "doc_xxx",
+        "fileName": "雇佣条例.pdf",
+        "chunkCount": 320,
+        "uploadedAt": "2026-04-16T10:05:00Z",
+        "status": "indexed"
+      }
+    ]
+  }
+]
+```
 
-**响应示例**：
+---
+
+### `PATCH /api/kb/{kbId}`
+
+更新知识库名称或描述。
+
+**请求体**：
 ```json
 {
-  "docId": "doc_e5f6g7h8",
-  "fileName": "report.pdf",
-  "chunkCount": 42,
-  "status": "indexed"
+  "tenantId": "your_tenant",
+  "name": "新名称",
+  "description": "新描述"
 }
 ```
 
-> 文档在服务端被分割为约 512 token 的语义块，再写入知识图谱与向量库，**首次上传较慢**（约数秒至数分钟，取决于文档大小和 LLM 速度）。
+> `name` 和 `description` 至少提供一个，只传其中一个时只更新对应字段。
+
+**响应**：同 `POST /api/kb/create`。
 
 ---
 
 ### `DELETE /api/kb/{kbId}`
 
-删除知识库及其全部数据。
+删除知识库及其全部文档和向量数据。
 
-**请求参数**：`tenantId`（query string）
+**Query 参数**：`tenantId`
 
-**响应示例**：
+**响应**：`{ "ok": true }`
+
+---
+
+### `GET /api/kb/{kbId}/docs`
+
+列出某知识库下所有文档。
+
+**Query 参数**：`tenantId`
+
+**响应**：文档列表，字段同上。
+
+---
+
+### `POST /api/kb/{kbId}/upload`
+
+上传并异步索引文档（支持 PDF / TXT / Markdown，最大 50MB，支持批量）。
+
+**请求**：`multipart/form-data`
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `files` | File[] | 要上传的文档（支持多个） |
+| `tenantId` | string | 租户 ID |
+| `modelConfig` | JSON string | 可选，覆盖本次上传的模型配置 |
+
+**响应**（立即返回，无需等待建图完成）：
 ```json
-{ "status": "deleted" }
+[
+  {
+    "docId": "doc_e5f6g7h8",
+    "fileName": "report.pdf",
+    "chunkCount": 42,
+    "status": "indexing"
+  }
+]
 ```
+
+> 上传相同内容的文件会返回 `409 Conflict`，并告知已存在的 `docId`。
+
+---
+
+### `GET /api/kb/{kbId}/docs/{docId}/status`
+
+查询文档索引状态，用于轮询上传进度。
+
+**Query 参数**：`tenantId`
+
+**响应**：
+```json
+{
+  "docId": "doc_e5f6g7h8",
+  "fileName": "report.pdf",
+  "chunkCount": 42,
+  "uploadedAt": "2026-04-16T10:05:00Z",
+  "status": "indexed"
+}
+```
+
+| `status` 值 | 含义 |
+|-------------|------|
+| `indexing` | 后台建图中 |
+| `indexed` | 索引完成，可以查询 |
+| `error` | 索引失败，`error` 字段包含原因 |
+
+---
+
+### `DELETE /api/kb/{kbId}/docs/{docId}`
+
+删除单篇文档及其在知识图谱中的所有数据。
+
+**Query 参数**：`tenantId`
+
+> 文档处于 `indexing` 状态时返回 `409`，请等待索引完成后再删除。
+
+**响应**：`{ "ok": true }`
 
 ---
 
@@ -271,7 +339,7 @@ curl -X POST http://localhost:8000/api/query \
   "question": "公司年假政策是什么？",
   "mode": "hybrid",
   "topK": 5,
-  "queryModel": {             // 可选，仅覆盖本次请求的问答模型
+  "queryModel": {
     "baseUrl": "...",
     "apiKey": "...",
     "model": "..."
@@ -283,17 +351,15 @@ curl -X POST http://localhost:8000/api/query \
 |------|--------|------|
 | `mode` | `hybrid` | 检索模式：`low` / `high` / `hybrid` |
 | `topK` | `5` | 召回片段数（1–20） |
-| `queryModel` | 环境变量 | 仅覆盖本次问答 LLM |
+| `queryModel` | KB 级别配置 → 环境变量 | 仅覆盖本次请求的问答模型 |
 
-**响应示例**：
+**响应**：
 ```json
 {
   "traceId": "optional-trace-id",
   "answer": "根据公司规定，员工每年享有 10 天带薪年假……",
-  "sources": [
-    { "content": "第三章 假期制度……", "score": 0.87 }
-  ],
-  "entities": ["年假", "带薪假期"],
+  "sources": [],
+  "entities": [],
   "latencyMs": 1240
 }
 ```
@@ -319,7 +385,12 @@ curl -X POST http://localhost:8000/api/query \
 - **DeepSeek**（deepseek-chat / deepseek-reasoner）
 - **Ollama**（本地模型，`baseUrl` 设为 `http://localhost:11434/v1`）
 
-模型维度自动推断规则（当 `DEFAULT_EMBEDDING_DIM` 未设置时）：
+**模型优先级**（以 query 模型为例）：
+1. 请求级别 `queryModel` 参数
+2. 创建 KB 时的 `modelConfig.query`
+3. 环境变量 `DEFAULT_QUERY_*`
+
+Embedding 维度自动推断规则：
 
 | 模型名包含 | 推断维度 |
 |-----------|----------|
@@ -332,14 +403,26 @@ curl -X POST http://localhost:8000/api/query \
 
 ## Docker 部署
 
+### 使用 docker-compose（推荐）
+
+```bash
+# 确保 .env 文件中已填写 API Key
+docker compose up -d
+
+# 查看日志
+docker compose logs -f
+```
+
+### 手动 docker run
+
 ```bash
 docker build -t rag-service .
 
 docker run -d \
   -p 8000:8000 \
   -e DEFAULT_INDEX_API_KEY="sk-..." \
-  -e DEFAULT_QUERY_API_KEY="sk-..." \
   -e DEFAULT_EMBEDDING_API_KEY="sk-..." \
+  -e INTERNAL_SECRET="your-strong-secret" \
   -v /host/data:/data/lightrag \
   --name rag-service \
   rag-service
@@ -353,13 +436,15 @@ docker run -d \
 
 ```
 python_rag_service/
-├── main.py                  # FastAPI 入口，注册路由
+├── main.py                  # FastAPI 入口，路由注册，启动检查
 ├── requirements.txt
 ├── Dockerfile
+├── docker-compose.yml
 │
 ├── api/
+│   ├── deps.py              # Bearer Token 鉴权
 │   ├── health.py            # GET  /api/health
-│   ├── kb.py                # POST /api/kb/create  POST /api/kb/{id}/upload  DELETE /api/kb/{id}
+│   ├── kb.py                # 知识库 & 文档 CRUD
 │   └── query.py             # POST /api/query
 │
 ├── core/
@@ -367,7 +452,8 @@ python_rag_service/
 │
 ├── services/
 │   ├── rag_manager.py       # LightRAG 实例生命周期管理
-│   ├── model_factory.py     # LLM & 嵌入函数工厂
+│   ├── meta_store.py        # KB / 文档元数据持久化（JSON）
+│   ├── model_factory.py     # LLM & Embedding 函数工厂
 │   ├── parser.py            # PDF / TXT / MD 解析
 │   └── chunker.py           # 语义分块（512 token / 50 overlap）
 │
@@ -375,5 +461,7 @@ python_rag_service/
 │   └── schemas.py           # Pydantic 请求/响应 Schema
 │
 └── data/                    # 运行时生成，知识库存储根目录
-    └── {tenantId}/{kbId}/
+    └── {tenantId}/
+        ├── meta.json        # 该租户所有 KB 的元数据
+        └── {kbId}/          # LightRAG 向量库 & 知识图谱文件
 ```

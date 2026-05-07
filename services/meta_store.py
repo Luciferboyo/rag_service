@@ -29,10 +29,10 @@ def _load(tenant_id: str) -> dict:
 
 
 def _save(tenant_id: str, data: dict):
-    _meta_path(tenant_id).write_text(
-        json.dumps(data, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    path = _meta_path(tenant_id)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)  # 原子替换，防止写到一半时进程崩溃导致文件损坏
 
 
 def _lock(tenant_id: str) -> asyncio.Lock:
@@ -185,3 +185,31 @@ def list_kbs(tenant_id: str) -> list[dict]:
 def list_docs(tenant_id: str, kb_id: str) -> list[dict]:
     data = _load(tenant_id)
     return data.get(kb_id, {}).get("docs", [])
+
+
+def reset_stale_indexing(storage_dir: str) -> int:
+    """
+    服务启动时调用。
+    扫描所有 tenant 的 meta.json，将中断的 indexing 文档标记为 error。
+    返回被重置的文档数量。
+    """
+    storage = Path(storage_dir)
+    if not storage.exists():
+        return 0
+    count = 0
+    for tenant_dir in storage.iterdir():
+        if not tenant_dir.is_dir() or not (tenant_dir / "meta.json").exists():
+            continue
+        tenant_id = tenant_dir.name
+        data = _load(tenant_id)
+        changed = False
+        for kb in data.values():
+            for doc in kb.get("docs", []):
+                if doc.get("status") == "indexing":
+                    doc["status"] = "error"
+                    doc["error"] = "服务重启，索引任务中断"
+                    changed = True
+                    count += 1
+        if changed:
+            _save(tenant_id, data)
+    return count

@@ -1,8 +1,10 @@
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from api import kb, query, health
 from core.config import settings
+from services import meta_store
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,7 +20,16 @@ if not settings.default_index_api_key:
 if not settings.default_embedding_api_key:
     logger.warning("⚠️  DEFAULT_EMBEDDING_API_KEY 未设置，向量检索功能将不可用")
 
-app = FastAPI(title="LightRAG Service", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    count = meta_store.reset_stale_indexing(settings.storage_dir)
+    if count:
+        logger.warning("⚠️  重置了 %d 个中断的索引任务（status 已标记为 error）", count)
+    yield
+
+
+app = FastAPI(title="LightRAG Service", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
