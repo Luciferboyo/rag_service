@@ -1,17 +1,32 @@
-# 忽略单个文件
+# 环境变量（含密钥，绝不提交）
 .env
 .env.local
 .env.*.local
-pycharm.key
 
-# 忽略整个文件夹
-venv/
+# 知识库运行时数据
+data/
+
+# Python 缓存
 __pycache__/
-.idea/
-.claude
-data/tenant_001
-data/test_tenant
-
-# 忽略某类型的文件
-*.log
+**/__pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# 虚拟环境
+venv/
+.venv/
+
+# 测试缓存
+.pytest_cache/
+**/.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# 其他
+*.log
+.claude
+pycharm.key

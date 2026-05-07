@@ -14,11 +14,13 @@ logger = logging.getLogger("rag.query")
 async def query(req: QueryRequest):
     if not req.tenantId:
         raise HTTPException(400, "tenantId 不能为空")
+    if not req.kbId:
+        raise HTTPException(400, "kbId 不能为空")
     if not req.question.strip():
         raise HTTPException(400, "question 不能为空")
 
     trace_id = req.traceId or str(uuid.uuid4())
-    kb_id = req.kbId or "default"
+    kb_id = req.kbId
 
     if not meta_store.kb_exists(req.tenantId, kb_id):
         raise HTTPException(404, f"知识库 {kb_id} 不存在")

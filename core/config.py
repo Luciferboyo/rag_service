@@ -1,6 +1,8 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
     # 服务配置
     storage_dir: str = "./data"
 
@@ -23,9 +25,5 @@ class Settings(BaseSettings):
 
     # 内部鉴权（Node.js Bot 调用时传 header）
     internal_secret: str = "hello"
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
 settings = Settings()
