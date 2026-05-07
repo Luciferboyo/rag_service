@@ -21,13 +21,15 @@
 ## 功能特性
 
 - **多租户隔离**：每个 `(tenantId, kbId)` 拥有独立的向量库与知识图谱
-- **文档解析**：支持 PDF、TXT、Markdown，自动语义分块
+- **文档解析**：支持 PDF、TXT、Markdown，自动语义分块（512 token / 50 overlap）
 - **异步索引**：上传后立即返回，后台建图，通过状态接口轮询进度
 - **灵活模型**：索引、查询、嵌入模型均可独立配置（KB 级别或请求级别），支持任意 OpenAI 兼容 API
 - **多种检索模式**：实体检索（low）、语义检索（high）、混合检索（hybrid）
 - **知识图谱 + 向量双引擎**：由 LightRAG 提供，检索质量优于纯向量方案
 - **重复文档防护**：基于文件内容 SHA-256 去重，避免知识图谱冗余
 - **文档级删除**：可单独删除某篇文档，无需重建整个知识库
+- **查询超时保护**：LLM 无响应超过阈值时返回 504，防止请求永久挂起
+- **列表分页**：KB 列表与文档列表均支持分页，适合大规模场景
 
 ---
 
@@ -93,7 +95,14 @@ python main.py
 # 默认监听 http://0.0.0.0:8000
 ```
 
-### 4. 快速验证
+### 4. 运行测试
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+### 5. 快速验证
 
 ```bash
 # 健康检查
@@ -144,6 +153,7 @@ curl -X POST http://localhost:8000/api/query \
 | `DEFAULT_EMBEDDING_MODEL` | `text-embedding-3-small` | 嵌入模型名称 |
 | `DEFAULT_EMBEDDING_DIM` | `1536` | 嵌入向量维度 |
 | `COSINE_THRESHOLD` | `0.5` | 向量检索最低相似度阈值（0.0–1.0） |
+| `QUERY_TIMEOUT` | `120` | 查询超时秒数，超时返回 504 |
 | `STORAGE_DIR` | `./data` | 知识库数据存储根目录 |
 | `INTERNAL_SECRET` | `hello` | 内部服务鉴权 Token（**生产环境务必修改**） |
 
@@ -195,29 +205,59 @@ Authorization: Bearer {INTERNAL_SECRET}
 
 ### `GET /api/kb/list`
 
-列出某租户下所有知识库。
+分页列出某租户下所有知识库（仅含概要信息，不含完整文档列表）。
+
+**Query 参数**：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `tenantId` | 必填 | 租户 ID |
+| `page` | `1` | 页码（从 1 开始） |
+| `pageSize` | `20` | 每页数量（1–100） |
+
+**响应**：
+```json
+{
+  "total": 2,
+  "page": 1,
+  "pageSize": 20,
+  "items": [
+    {
+      "kbId": "kb_a1b2c3d4",
+      "name": "香港劳动法",
+      "description": "雇佣条例等法律文件",
+      "createdAt": "2026-04-16T10:00:00Z",
+      "docCount": 3
+    }
+  ]
+}
+```
+
+---
+
+### `GET /api/kb/{kbId}`
+
+获取单个知识库详情，包含完整文档列表。
 
 **Query 参数**：`tenantId`
 
 **响应**：
 ```json
-[
-  {
-    "kbId": "kb_a1b2c3d4",
-    "name": "香港劳动法",
-    "description": "雇佣条例等法律文件",
-    "createdAt": "2026-04-16T10:00:00Z",
-    "docs": [
-      {
-        "docId": "doc_xxx",
-        "fileName": "雇佣条例.pdf",
-        "chunkCount": 320,
-        "uploadedAt": "2026-04-16T10:05:00Z",
-        "status": "indexed"
-      }
-    ]
-  }
-]
+{
+  "kbId": "kb_a1b2c3d4",
+  "name": "香港劳动法",
+  "description": "雇佣条例等法律文件",
+  "createdAt": "2026-04-16T10:00:00Z",
+  "docs": [
+    {
+      "docId": "doc_xxx",
+      "fileName": "雇佣条例.pdf",
+      "chunkCount": 320,
+      "uploadedAt": "2026-04-16T10:05:00Z",
+      "status": "indexed"
+    }
+  ]
+}
 ```
 
 ---
@@ -253,11 +293,33 @@ Authorization: Bearer {INTERNAL_SECRET}
 
 ### `GET /api/kb/{kbId}/docs`
 
-列出某知识库下所有文档。
+分页列出某知识库下所有文档。
 
-**Query 参数**：`tenantId`
+**Query 参数**：
 
-**响应**：文档列表，字段同上。
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `tenantId` | 必填 | 租户 ID |
+| `page` | `1` | 页码（从 1 开始） |
+| `pageSize` | `20` | 每页数量（1–100） |
+
+**响应**：
+```json
+{
+  "total": 5,
+  "page": 1,
+  "pageSize": 20,
+  "items": [
+    {
+      "docId": "doc_xxx",
+      "fileName": "雇佣条例.pdf",
+      "chunkCount": 320,
+      "uploadedAt": "2026-04-16T10:05:00Z",
+      "status": "indexed"
+    }
+  ]
+}
+```
 
 ---
 
@@ -328,7 +390,7 @@ Authorization: Bearer {INTERNAL_SECRET}
 
 ### `POST /api/query`
 
-向知识库提问，返回 LLM 生成的答案。
+向知识库提问，返回 LLM 生成的答案。超过 `QUERY_TIMEOUT` 秒未响应时返回 504。
 
 **请求体**：
 ```json
@@ -347,11 +409,15 @@ Authorization: Bearer {INTERNAL_SECRET}
 }
 ```
 
-| 字段 | 默认值 | 说明 |
-|------|--------|------|
-| `mode` | `hybrid` | 检索模式：`low` / `high` / `hybrid` |
-| `topK` | `5` | 召回片段数（1–20） |
-| `queryModel` | KB 级别配置 → 环境变量 | 仅覆盖本次请求的问答模型 |
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `tenantId` | string | 必填 | 租户 ID |
+| `kbId` | string | 必填 | 知识库 ID |
+| `question` | string | 必填 | 问题（1–2000 字符） |
+| `mode` | string | `hybrid` | 检索模式：`low` / `high` / `hybrid` |
+| `topK` | int | `5` | 召回片段数（1–20） |
+| `traceId` | string | 自动生成 | 链路追踪 ID，原样返回 |
+| `queryModel` | object | KB 配置 → 环境变量 | 仅覆盖本次请求的问答模型 |
 
 **响应**：
 ```json
@@ -438,6 +504,7 @@ docker run -d \
 python_rag_service/
 ├── main.py                  # FastAPI 入口，路由注册，启动检查
 ├── requirements.txt
+├── requirements-dev.txt     # 测试依赖
 ├── Dockerfile
 ├── docker-compose.yml
 │
@@ -459,6 +526,13 @@ python_rag_service/
 │
 ├── models/
 │   └── schemas.py           # Pydantic 请求/响应 Schema
+│
+├── test/                    # 自动化测试（49 个用例）
+│   ├── conftest.py
+│   ├── test_health.py
+│   ├── test_kb.py
+│   ├── test_docs.py
+│   └── test_query.py
 │
 └── data/                    # 运行时生成，知识库存储根目录
     └── {tenantId}/
