@@ -66,12 +66,19 @@ async def insert_chunks(
     kb_id: str,
     chunks: list[str],
     model_cfg: RagModelConfig | None = None,
+    rag_doc_ids: list[str] | None = None,
 ) -> int:
     """将已分好的 chunks 插入知识图谱。返回 chunk 数量。"""
     rag = await get_or_create(tenant_id, kb_id, model_cfg)
-    # LightRAG ainsert 支持传 list，每个元素独立建图
-    await rag.ainsert(chunks)
+    await rag.ainsert(chunks, ids=rag_doc_ids)
     return len(chunks)
+
+
+async def delete_document(tenant_id: str, kb_id: str, rag_doc_ids: list[str]):
+    """从知识图谱中删除单个文档的所有 chunks。"""
+    rag = await get_or_create(tenant_id, kb_id)
+    for rag_id in rag_doc_ids:
+        await rag.adelete_by_doc_id(rag_id)
 
 
 async def query(

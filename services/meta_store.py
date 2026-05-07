@@ -60,7 +60,14 @@ async def create_kb(tenant_id: str, kb_id: str, name: str, description: str | No
         _save(tenant_id, data)
 
 
-async def add_doc(tenant_id: str, kb_id: str, doc_id: str, file_name: str, chunk_count: int):
+async def add_doc(
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    file_name: str,
+    chunk_count: int,
+    rag_doc_ids: list[str],
+):
     async with _lock(tenant_id):
         data = _load(tenant_id)
         if kb_id not in data:
@@ -70,7 +77,27 @@ async def add_doc(tenant_id: str, kb_id: str, doc_id: str, file_name: str, chunk
             "fileName": file_name,
             "chunkCount": chunk_count,
             "uploadedAt": _now(),
+            "ragDocIds": rag_doc_ids,
         })
+        _save(tenant_id, data)
+
+
+def get_doc(tenant_id: str, kb_id: str, doc_id: str) -> dict | None:
+    data = _load(tenant_id)
+    for doc in data.get(kb_id, {}).get("docs", []):
+        if doc["docId"] == doc_id:
+            return doc
+    return None
+
+
+async def delete_doc(tenant_id: str, kb_id: str, doc_id: str):
+    async with _lock(tenant_id):
+        data = _load(tenant_id)
+        if kb_id not in data:
+            return
+        data[kb_id]["docs"] = [
+            d for d in data[kb_id]["docs"] if d["docId"] != doc_id
+        ]
         _save(tenant_id, data)
 
 

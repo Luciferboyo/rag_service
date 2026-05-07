@@ -89,14 +89,15 @@ async def upload_document(
             raise HTTPException(400, f"文档 {file.filename} 分块失败，内容太少")
 
         doc_id = f"doc_{uuid.uuid4().hex[:12]}"
+        rag_doc_ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
         logger.info("Indexing start | tenant=%s kb=%s file=%s chunks=%d", tenantId, kb_id, file.filename, len(chunks))
         try:
-            count = await rag_manager.insert_chunks(tenantId, kb_id, chunks, cfg)
+            count = await rag_manager.insert_chunks(tenantId, kb_id, chunks, cfg, rag_doc_ids)
         except Exception as e:
             logger.error("Indexing failed | tenant=%s kb=%s file=%s error=%s", tenantId, kb_id, file.filename, str(e))
             raise HTTPException(500, f"索引失败: {str(e)}")
 
-        await meta_store.add_doc(tenantId, kb_id, doc_id, file.filename, count)
+        await meta_store.add_doc(tenantId, kb_id, doc_id, file.filename, count, rag_doc_ids)
         logger.info("Indexing done | tenant=%s kb=%s file=%s doc=%s chunks=%d", tenantId, kb_id, file.filename, doc_id, count)
 
         results.append(UploadResponse(
@@ -107,6 +108,27 @@ async def upload_document(
         ))
 
     return results
+
+
+@router.delete("/{kb_id}/docs/{doc_id}", dependencies=[Depends(verify_token)])
+async def delete_doc(kb_id: str, doc_id: str, tenantId: str):
+    if not meta_store.kb_exists(tenantId, kb_id):
+        raise HTTPException(404, f"知识库 {kb_id} 不存在")
+    doc = meta_store.get_doc(tenantId, kb_id, doc_id)
+    if doc is None:
+        raise HTTPException(404, f"文档 {doc_id} 不存在")
+
+    rag_doc_ids = doc.get("ragDocIds", [])
+    if rag_doc_ids:
+        try:
+            await rag_manager.delete_document(tenantId, kb_id, rag_doc_ids)
+        except Exception as e:
+            # LightRAG 侧删除失败只记 warning，继续清理 meta，避免数据永久不一致
+            logger.warning("Doc delete partial failure | tenant=%s kb=%s doc=%s error=%s", tenantId, kb_id, doc_id, str(e))
+
+    await meta_store.delete_doc(tenantId, kb_id, doc_id)
+    logger.info("Doc deleted | tenant=%s kb=%s doc=%s", tenantId, kb_id, doc_id)
+    return {"ok": True}
 
 
 @router.delete("/{kb_id}", dependencies=[Depends(verify_token)])
