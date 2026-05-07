@@ -14,11 +14,6 @@ logger = logging.getLogger("rag.query")
 
 @router.post("/query", response_model=QueryResponse, dependencies=[Depends(verify_token)])
 async def query(req: QueryRequest):
-    if not req.tenantId:
-        raise HTTPException(400, "tenantId 不能为空")
-    if not req.question.strip():
-        raise HTTPException(400, "question 不能为空")
-
     trace_id = req.traceId or str(uuid.uuid4())
     kb_id = req.kbId
 

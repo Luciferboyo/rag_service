@@ -4,7 +4,7 @@ import logging
 import asyncio
 from fastapi import APIRouter, BackgroundTasks, UploadFile, File, Form, HTTPException, Depends
 from typing import Optional, List
-from models.schemas import CreateKbRequest, KbResponse, PatchKbRequest, UploadResponse, RagModelConfig, KbDetail, DocItem, PagedResponse
+from models.schemas import CreateKbRequest, KbResponse, PatchKbRequest, UploadResponse, RagModelConfig, KbSummary, KbDetail, DocItem, PagedResponse
 from services import parser, chunker, rag_manager
 from services import meta_store
 from api.deps import verify_token
@@ -54,7 +54,7 @@ async def create_kb(req: CreateKbRequest):
     )
 
 
-@router.get("/list", response_model=PagedResponse[KbDetail], dependencies=[Depends(verify_token)])
+@router.get("/list", response_model=PagedResponse[KbSummary], dependencies=[Depends(verify_token)])
 async def list_kbs(tenantId: str, page: int = 1, pageSize: int = 20):
     if page < 1 or pageSize < 1 or pageSize > 100:
         raise HTTPException(400, "page 从 1 开始，pageSize 范围 1-100")
@@ -62,12 +62,12 @@ async def list_kbs(tenantId: str, page: int = 1, pageSize: int = 20):
     total = len(kbs)
     paged = kbs[(page - 1) * pageSize: page * pageSize]
     items = [
-        KbDetail(
+        KbSummary(
             kbId=kb["kbId"],
             name=kb["name"],
             description=kb.get("description"),
             createdAt=kb["createdAt"],
-            docs=[DocItem(**d) for d in kb.get("docs", [])],
+            docCount=len(kb.get("docs", [])),
         )
         for kb in paged
     ]
@@ -139,7 +139,7 @@ async def upload_document(
         if len(file_bytes) > 50 * 1024 * 1024:
             raise HTTPException(400, f"文件 {file.filename} 不能超过 50MB")
 
-        file_hash = hashlib.sha256(file_bytes).hexdigest()
+        file_hash = await asyncio.to_thread(lambda b: hashlib.sha256(b).hexdigest(), file_bytes)
         existing = meta_store.get_doc_by_hash(tenantId, kb_id, file_hash)
         if existing:
             raise HTTPException(409, f"文件 {file.filename} 内容已存在，docId={existing['docId']}")

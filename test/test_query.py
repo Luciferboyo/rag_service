@@ -129,6 +129,18 @@ def test_query_missing_question(client):
     assert r.status_code == 422
 
 
+def test_query_empty_question(client):
+    """question 为空字符串应返回 422"""
+    tid = make_tenant()
+    kb = _create_kb(client, tid)
+    r = client.post(
+        "/api/query",
+        json={"tenantId": tid, "kbId": kb["kbId"], "question": ""},
+        headers=HEADERS,
+    )
+    assert r.status_code == 422
+
+
 def test_query_missing_kb_id(client):
     """kbId 现在是必填字段，不传应返回 422"""
     tid = make_tenant()

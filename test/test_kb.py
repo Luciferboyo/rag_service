@@ -65,6 +65,10 @@ def test_list_kbs_after_create(client):
     names = [kb["name"] for kb in data["items"]]
     assert "KB1" in names
     assert "KB2" in names
+    # list 视图只返回 docCount，不含完整文档列表
+    for item in data["items"]:
+        assert "docCount" in item
+        assert "docs" not in item
 
 
 def test_list_kbs_pagination(client):
@@ -84,6 +88,19 @@ def test_list_kbs_invalid_page(client):
     tid = make_tenant()
     r = client.get(f"/api/kb/list?tenantId={tid}&page=0", headers=HEADERS)
     assert r.status_code == 400
+
+
+def test_create_kb_empty_name(client):
+    """name 为空字符串应返回 422"""
+    tid = make_tenant()
+    r = client.post("/api/kb/create", json={"tenantId": tid, "name": ""}, headers=HEADERS)
+    assert r.status_code == 422
+
+
+def test_create_kb_empty_tenant(client):
+    """tenantId 为空字符串应返回 422"""
+    r = client.post("/api/kb/create", json={"tenantId": "", "name": "KB"}, headers=HEADERS)
+    assert r.status_code == 422
 
 
 # ── 更新知识库 ────────────────────────────────────────────────
