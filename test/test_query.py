@@ -1,4 +1,5 @@
 """查询接口测试"""
+import asyncio
 import pytest
 from test.conftest import HEADERS, make_tenant
 
@@ -162,3 +163,25 @@ def test_query_with_custom_model(client):
     )
     assert r.status_code == 200
     assert r.json()["answer"] == "测试答案"
+
+
+def test_query_timeout(client):
+    """rag_manager.query 超时时应返回 504"""
+    from unittest.mock import patch, AsyncMock
+
+    async def slow_query(*args, **kwargs):
+        await asyncio.sleep(999)
+
+    tid = make_tenant()
+    kb = _create_kb(client, tid)
+
+    with (
+        patch("core.config.settings.query_timeout", 0.05),
+        patch("services.rag_manager.query", new=slow_query),
+    ):
+        r = client.post(
+            "/api/query",
+            json={"tenantId": tid, "kbId": kb["kbId"], "question": "会超时的问题"},
+            headers=HEADERS,
+        )
+    assert r.status_code == 504

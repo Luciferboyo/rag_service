@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # 向量检索相似度阈值
     cosine_threshold: float = 0.5
 
+    # 查询超时（秒），防止 LLM 无响应时请求永久挂起
+    query_timeout: int = 120
+
     # 内部鉴权（Node.js Bot 调用时传 header）
     internal_secret: str = "hello"
 

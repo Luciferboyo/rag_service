@@ -1,10 +1,12 @@
 import time
 import uuid
+import asyncio
 import logging
 from fastapi import APIRouter, HTTPException, Depends
 from models.schemas import QueryRequest, QueryResponse
 from services import rag_manager, meta_store
 from api.deps import verify_token
+from core.config import settings
 
 router = APIRouter(tags=["查询"])
 logger = logging.getLogger("rag.query")
@@ -29,14 +31,20 @@ async def query(req: QueryRequest):
                 trace_id, req.tenantId, kb_id, req.mode.value, req.question[:50])
 
     try:
-        result = await rag_manager.query(
-            tenant_id=req.tenantId,
-            kb_id=kb_id,
-            question=req.question,
-            mode=req.mode.value,
-            top_k=req.topK,
-            query_model_cfg=req.queryModel,
+        result = await asyncio.wait_for(
+            rag_manager.query(
+                tenant_id=req.tenantId,
+                kb_id=kb_id,
+                question=req.question,
+                mode=req.mode.value,
+                top_k=req.topK,
+                query_model_cfg=req.queryModel,
+            ),
+            timeout=settings.query_timeout,
         )
+    except asyncio.TimeoutError:
+        logger.error("Query timeout | trace=%s tenant=%s kb=%s timeout=%ds", trace_id, req.tenantId, kb_id, settings.query_timeout)
+        raise HTTPException(504, f"查询超时（>{settings.query_timeout}s），请稍后重试")
     except Exception as e:
         logger.error("Query failed | trace=%s tenant=%s kb=%s error=%s", trace_id, req.tenantId, kb_id, str(e))
         raise HTTPException(500, f"查询失败: {str(e)}")
