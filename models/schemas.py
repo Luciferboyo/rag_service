@@ -35,6 +35,11 @@ class KbResponse(BaseModel):
     name: str
     description: Optional[str] = None
 
+class PatchKbRequest(BaseModel):
+    tenantId: str
+    name: Optional[str] = None
+    description: Optional[str] = None
+
 # ── 上传 ─────────────────────────────────────────────────────
 
 class UploadResponse(BaseModel):

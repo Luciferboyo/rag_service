@@ -135,6 +135,23 @@ async def delete_doc(tenant_id: str, kb_id: str, doc_id: str):
         _save(tenant_id, data)
 
 
+async def update_kb(
+    tenant_id: str,
+    kb_id: str,
+    name: str | None = None,
+    description: str | None = None,
+):
+    async with _lock(tenant_id):
+        data = _load(tenant_id)
+        if kb_id not in data:
+            return
+        if name is not None:
+            data[kb_id]["name"] = name
+        if description is not None:
+            data[kb_id]["description"] = description
+        _save(tenant_id, data)
+
+
 async def delete_kb(tenant_id: str, kb_id: str):
     async with _lock(tenant_id):
         data = _load(tenant_id)
@@ -144,6 +161,10 @@ async def delete_kb(tenant_id: str, kb_id: str):
 
 def kb_exists(tenant_id: str, kb_id: str) -> bool:
     return kb_id in _load(tenant_id)
+
+
+def get_kb(tenant_id: str, kb_id: str) -> dict | None:
+    return _load(tenant_id).get(kb_id)
 
 
 def list_kbs(tenant_id: str) -> list[dict]:

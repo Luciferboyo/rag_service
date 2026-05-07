@@ -2,7 +2,7 @@ import uuid
 import logging
 from fastapi import APIRouter, BackgroundTasks, UploadFile, File, Form, HTTPException, Depends
 from typing import Optional, List
-from models.schemas import CreateKbRequest, KbResponse, UploadResponse, RagModelConfig, KbDetail, DocItem
+from models.schemas import CreateKbRequest, KbResponse, PatchKbRequest, UploadResponse, RagModelConfig, KbDetail, DocItem
 from services import parser, chunker, rag_manager
 from services import meta_store
 from api.deps import verify_token
@@ -58,6 +58,18 @@ async def list_kbs(tenantId: str):
         )
         for kb in kbs
     ]
+
+
+@router.patch("/{kb_id}", response_model=KbResponse, dependencies=[Depends(verify_token)])
+async def patch_kb(kb_id: str, req: PatchKbRequest):
+    if not meta_store.kb_exists(req.tenantId, kb_id):
+        raise HTTPException(404, f"知识库 {kb_id} 不存在")
+    if req.name is None and req.description is None:
+        raise HTTPException(400, "name 和 description 至少提供一个")
+    await meta_store.update_kb(req.tenantId, kb_id, req.name, req.description)
+    kb = meta_store.get_kb(req.tenantId, kb_id)
+    logger.info("KB updated | tenant=%s kb=%s", req.tenantId, kb_id)
+    return KbResponse(kbId=kb_id, tenantId=req.tenantId, name=kb["name"], description=kb.get("description"))
 
 
 @router.get("/{kb_id}/docs", response_model=list[DocItem], dependencies=[Depends(verify_token)])
