@@ -1,4 +1,5 @@
 import uuid
+import hashlib
 import logging
 from fastapi import APIRouter, BackgroundTasks, UploadFile, File, Form, HTTPException, Depends
 from typing import Optional, List
@@ -107,6 +108,11 @@ async def upload_document(
         if len(file_bytes) > 50 * 1024 * 1024:
             raise HTTPException(400, f"文件 {file.filename} 不能超过 50MB")
 
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
+        existing = meta_store.get_doc_by_hash(tenantId, kb_id, file_hash)
+        if existing:
+            raise HTTPException(409, f"文件 {file.filename} 内容已存在，docId={existing['docId']}")
+
         try:
             text = parser.parse(file.filename, file_bytes)
         except ValueError as e:
@@ -122,7 +128,7 @@ async def upload_document(
         doc_id = f"doc_{uuid.uuid4().hex[:12]}"
         rag_doc_ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
 
-        await meta_store.add_doc(tenantId, kb_id, doc_id, file.filename, len(chunks), rag_doc_ids, status="indexing")
+        await meta_store.add_doc(tenantId, kb_id, doc_id, file.filename, len(chunks), rag_doc_ids, status="indexing", file_hash=file_hash)
         background_tasks.add_task(_do_index, tenantId, kb_id, doc_id, chunks, cfg, rag_doc_ids)
         logger.info("Indexing queued | tenant=%s kb=%s file=%s doc=%s chunks=%d", tenantId, kb_id, file.filename, doc_id, len(chunks))
 

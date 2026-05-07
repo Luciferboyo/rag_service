@@ -80,6 +80,7 @@ async def add_doc(
     chunk_count: int,
     rag_doc_ids: list[str],
     status: str = "indexing",
+    file_hash: str | None = None,
 ):
     async with _lock(tenant_id):
         data = _load(tenant_id)
@@ -92,8 +93,17 @@ async def add_doc(
             "uploadedAt": _now(),
             "ragDocIds": rag_doc_ids,
             "status": status,
+            "fileHash": file_hash,
         })
         _save(tenant_id, data)
+
+
+def get_doc_by_hash(tenant_id: str, kb_id: str, file_hash: str) -> dict | None:
+    data = _load(tenant_id)
+    for doc in data.get(kb_id, {}).get("docs", []):
+        if doc.get("fileHash") == file_hash:
+            return doc
+    return None
 
 
 async def update_doc_status(
