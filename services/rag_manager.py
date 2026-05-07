@@ -100,9 +100,15 @@ async def query(
     rag = await get_or_create(tenant_id, kb_id)
 
     # 临时构造独立的 llm_func，不污染共享实例
+    # 优先级：请求级别 > KB 级别 query 配置 > 实例默认（index 模型）
     param = QueryParam(mode=mode, top_k=top_k)
     if query_model_cfg:
         param.model_func = make_llm_func(query_model_cfg)
+    else:
+        stored = meta_store.get_kb_model_config(tenant_id, kb_id)
+        if stored and stored.get("query"):
+            kb_query_cfg = ModelConfig.model_validate(stored["query"])
+            param.model_func = make_llm_func(kb_query_cfg)
 
     answer = await rag.aquery(question, param=param)
     return {"answer": answer, "sources": [], "entities": []}

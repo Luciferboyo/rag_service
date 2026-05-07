@@ -159,6 +159,8 @@ async def delete_doc(kb_id: str, doc_id: str, tenantId: str):
     doc = meta_store.get_doc(tenantId, kb_id, doc_id)
     if doc is None:
         raise HTTPException(404, f"文档 {doc_id} 不存在")
+    if doc.get("status") == "indexing":
+        raise HTTPException(409, f"文档 {doc_id} 正在索引中，请等待完成后再删除")
 
     rag_doc_ids = doc.get("ragDocIds", [])
     if rag_doc_ids:
