@@ -49,7 +49,9 @@ def test_list_kbs_empty(client):
     tid = make_tenant()
     r = client.get(f"/api/kb/list?tenantId={tid}", headers=HEADERS)
     assert r.status_code == 200
-    assert r.json() == []
+    data = r.json()
+    assert data["total"] == 0
+    assert data["items"] == []
 
 
 def test_list_kbs_after_create(client):
@@ -58,9 +60,30 @@ def test_list_kbs_after_create(client):
     create_kb(client, tid, name="KB2")
     r = client.get(f"/api/kb/list?tenantId={tid}", headers=HEADERS)
     assert r.status_code == 200
-    names = [kb["name"] for kb in r.json()]
+    data = r.json()
+    assert data["total"] == 2
+    names = [kb["name"] for kb in data["items"]]
     assert "KB1" in names
     assert "KB2" in names
+
+
+def test_list_kbs_pagination(client):
+    tid = make_tenant()
+    for i in range(5):
+        create_kb(client, tid, name=f"KB{i}")
+    r = client.get(f"/api/kb/list?tenantId={tid}&page=1&pageSize=3", headers=HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] == 5
+    assert data["page"] == 1
+    assert data["pageSize"] == 3
+    assert len(data["items"]) == 3
+
+
+def test_list_kbs_invalid_page(client):
+    tid = make_tenant()
+    r = client.get(f"/api/kb/list?tenantId={tid}&page=0", headers=HEADERS)
+    assert r.status_code == 400
 
 
 # ── 更新知识库 ────────────────────────────────────────────────
@@ -128,7 +151,7 @@ def test_delete_kb_success(client):
 
     # 删除后不再出现在列表中
     r2 = client.get(f"/api/kb/list?tenantId={tid}", headers=HEADERS)
-    kb_ids = [k["kbId"] for k in r2.json()]
+    kb_ids = [k["kbId"] for k in r2.json()["items"]]
     assert kb_id not in kb_ids
 
 
@@ -145,10 +168,30 @@ def test_list_docs_empty(client):
     kb = create_kb(client, tid)
     r = client.get(f"/api/kb/{kb['kbId']}/docs?tenantId={tid}", headers=HEADERS)
     assert r.status_code == 200
-    assert r.json() == []
+    data = r.json()
+    assert data["total"] == 0
+    assert data["items"] == []
 
 
 def test_list_docs_kb_not_found(client):
     tid = make_tenant()
     r = client.get(f"/api/kb/kb_nonexistent/docs?tenantId={tid}", headers=HEADERS)
+    assert r.status_code == 404
+
+
+def test_get_kb_detail(client):
+    tid = make_tenant()
+    kb = create_kb(client, tid, name="详情KB", description="测试描述")
+    r = client.get(f"/api/kb/{kb['kbId']}?tenantId={tid}", headers=HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["kbId"] == kb["kbId"]
+    assert data["name"] == "详情KB"
+    assert data["description"] == "测试描述"
+    assert "docs" in data
+
+
+def test_get_kb_detail_not_found(client):
+    tid = make_tenant()
+    r = client.get(f"/api/kb/kb_nonexistent?tenantId={tid}", headers=HEADERS)
     assert r.status_code == 404

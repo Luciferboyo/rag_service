@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Generic, TypeVar
 from enum import Enum
+
+T = TypeVar("T")
 
 class QueryMode(str, Enum):
     low = "low"       # 实体检索（精确匹配）
@@ -91,3 +93,9 @@ class KbDetail(BaseModel):
     description: Optional[str] = None
     createdAt: str
     docs: List[DocItem] = []
+
+class PagedResponse(BaseModel, Generic[T]):
+    total: int
+    page: int
+    pageSize: int
+    items: List[T]

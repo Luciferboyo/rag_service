@@ -4,7 +4,7 @@ import logging
 import asyncio
 from fastapi import APIRouter, BackgroundTasks, UploadFile, File, Form, HTTPException, Depends
 from typing import Optional, List
-from models.schemas import CreateKbRequest, KbResponse, PatchKbRequest, UploadResponse, RagModelConfig, KbDetail, DocItem
+from models.schemas import CreateKbRequest, KbResponse, PatchKbRequest, UploadResponse, RagModelConfig, KbDetail, DocItem, PagedResponse
 from services import parser, chunker, rag_manager
 from services import meta_store
 from api.deps import verify_token
@@ -35,9 +35,16 @@ async def _do_index(
 @router.post("/create", response_model=KbResponse, dependencies=[Depends(verify_token)])
 async def create_kb(req: CreateKbRequest):
     kb_id = f"kb_{uuid.uuid4().hex[:12]}"
-    await rag_manager.get_or_create(req.tenantId, kb_id, req.modelConfig)
     model_config_dict = req.modelConfig.model_dump(mode="json") if req.modelConfig else None
+    # 先写 meta，再初始化实例：确保重启后能从磁盘恢复，避免写 meta 失败导致孤立实例
     await meta_store.create_kb(req.tenantId, kb_id, req.name, req.description, model_config_dict)
+    try:
+        await rag_manager.get_or_create(req.tenantId, kb_id, req.modelConfig)
+    except Exception as e:
+        # 初始化失败则回滚 meta，保持一致性
+        await meta_store.delete_kb(req.tenantId, kb_id)
+        logger.error("KB init failed | tenant=%s kb=%s error=%s", req.tenantId, kb_id, str(e))
+        raise HTTPException(500, f"知识库初始化失败: {str(e)}")
     logger.info("KB created | tenant=%s kb=%s name=%s", req.tenantId, kb_id, req.name)
     return KbResponse(
         kbId=kb_id,
@@ -47,10 +54,14 @@ async def create_kb(req: CreateKbRequest):
     )
 
 
-@router.get("/list", response_model=list[KbDetail], dependencies=[Depends(verify_token)])
-async def list_kbs(tenantId: str):
+@router.get("/list", response_model=PagedResponse[KbDetail], dependencies=[Depends(verify_token)])
+async def list_kbs(tenantId: str, page: int = 1, pageSize: int = 20):
+    if page < 1 or pageSize < 1 or pageSize > 100:
+        raise HTTPException(400, "page 从 1 开始，pageSize 范围 1-100")
     kbs = meta_store.list_kbs(tenantId)
-    return [
+    total = len(kbs)
+    paged = kbs[(page - 1) * pageSize: page * pageSize]
+    items = [
         KbDetail(
             kbId=kb["kbId"],
             name=kb["name"],
@@ -58,8 +69,23 @@ async def list_kbs(tenantId: str):
             createdAt=kb["createdAt"],
             docs=[DocItem(**d) for d in kb.get("docs", [])],
         )
-        for kb in kbs
+        for kb in paged
     ]
+    return PagedResponse(total=total, page=page, pageSize=pageSize, items=items)
+
+
+@router.get("/{kb_id}", response_model=KbDetail, dependencies=[Depends(verify_token)])
+async def get_kb(kb_id: str, tenantId: str):
+    kb = meta_store.get_kb(tenantId, kb_id)
+    if kb is None:
+        raise HTTPException(404, f"知识库 {kb_id} 不存在")
+    return KbDetail(
+        kbId=kb["kbId"],
+        name=kb["name"],
+        description=kb.get("description"),
+        createdAt=kb["createdAt"],
+        docs=[DocItem(**d) for d in kb.get("docs", [])],
+    )
 
 
 @router.patch("/{kb_id}", response_model=KbResponse, dependencies=[Depends(verify_token)])
@@ -74,12 +100,16 @@ async def patch_kb(kb_id: str, req: PatchKbRequest):
     return KbResponse(kbId=kb_id, tenantId=req.tenantId, name=kb["name"], description=kb.get("description"))
 
 
-@router.get("/{kb_id}/docs", response_model=list[DocItem], dependencies=[Depends(verify_token)])
-async def list_docs(kb_id: str, tenantId: str):
+@router.get("/{kb_id}/docs", response_model=PagedResponse[DocItem], dependencies=[Depends(verify_token)])
+async def list_docs(kb_id: str, tenantId: str, page: int = 1, pageSize: int = 20):
     if not meta_store.kb_exists(tenantId, kb_id):
         raise HTTPException(404, f"知识库 {kb_id} 不存在")
+    if page < 1 or pageSize < 1 or pageSize > 100:
+        raise HTTPException(400, "page 从 1 开始，pageSize 范围 1-100")
     docs = meta_store.list_docs(tenantId, kb_id)
-    return [DocItem(**d) for d in docs]
+    total = len(docs)
+    paged = docs[(page - 1) * pageSize: page * pageSize]
+    return PagedResponse(total=total, page=page, pageSize=pageSize, items=[DocItem(**d) for d in paged])
 
 
 @router.post("/{kb_id}/upload", response_model=List[UploadResponse], dependencies=[Depends(verify_token)])
